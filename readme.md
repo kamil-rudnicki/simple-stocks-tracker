@@ -13,3 +13,12 @@ and programming language is more powerful than spreadsheet in the end.
 * `cd Documents/Stocks/`     
 * `php -S localhost:8323`     
 * http://localhost:8323/stocks.php
+
+## Todo
+
+* [ ] change over time chart
+* [ ] code refactoring
+* [ ] what if didn't sell chart
+* [ ] ability to have individual account
+* [ ] add transactions in web view
+* [ ] put in on the Internet for everyone

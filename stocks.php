@@ -112,13 +112,17 @@ function getCurrentPortfolio(array $transactions): array
 
 function formatCurrency(float $amount, string $currency = ''): string
 {
-  setlocale(LC_MONETARY, "pl_PL");
-  return ($amount < 0 ? '-' : '') . money_format("%!n", $amount) . " " . $currency; //.0
+    if($amount === 0.0) return '';
+    setlocale(LC_MONETARY, "pl_PL");
+    return ($amount < 0 ? '-' : '') . money_format("%!n", $amount) . " " . $currency; //.0
 }
 
 function formatPercentage(float $percent): string
 {
-  return (string)number_format($percent * 100, 2, '.', '') . "%";
+    if($percent === 0.0) {
+        return '';
+    }
+    return (string)number_format($percent * 100, 2, '.', '') . "%";
 }
 
 function USDtoPLN(float $usd): float {
@@ -127,27 +131,43 @@ function USDtoPLN(float $usd): float {
 
 function friendlyCompanyName(string $ticker): string
 {
-  if ($ticker === 'AAPL.US') return 'Apple';
-  if ($ticker === 'ALE.WAR') return 'Allegro';
-  if ($ticker === 'WSE:B24') return 'Brand24';
-  if ($ticker === 'WSE:COLUMBUS') return 'Columbus';
-  if ($ticker === 'CDR.WAR') return 'CD Projekt';
-  if ($ticker === 'WDAY.US') return 'Workday';
-  if ($ticker === 'WSE:ETFSP500') return 'ETFS 500';
-  if ($ticker === 'SNOW.US') return 'Snowflake';
-  if ($ticker === 'DDOG.US') return 'DataDog';
-  if ($ticker === 'ZM.US') return 'Zoom';
-  if ($ticker === 'TWLO.US') return 'Twilio';
-  return $ticker;
+    if($ticker[0] === '-') $ticker = substr($ticker, 1);
+
+    if (stripos($ticker, 'AAPL') !== false) return 'US: Apple';
+    if (stripos($ticker, 'ALE') !== false) return 'WSE: Allegro';
+    if (stripos($ticker, 'B24') !== false) return 'WSE: Brand24';
+    if (stripos($ticker, 'COLUMBUS') !== false) return 'WSE: Columbus';
+    if (stripos($ticker, 'CDR') !== false) return 'WSE: CD Projekt';
+    if (stripos($ticker, '500') !== false) return 'WSE: ETFS 500';
+    if (stripos($ticker, 'ZM') !== false) return 'US: Zoom';
+    if (stripos($ticker, 'TWLO') !== false) return 'US: Twilio';
+    if (stripos($ticker, 'ASAN') !== false) return 'US: Asana';
+    if (stripos($ticker, 'WDAY') !== false) return 'US: Workday';
+    if (stripos($ticker, 'LEG') !== false) return 'WSE: Legimi';
+    if (stripos($ticker, 'SNOW') !== false) return 'US: Snowflake';
+    if (stripos($ticker, 'PLN') !== false) return 'FOREX: PLN-USD';
+    if (stripos($ticker, 'ETH') !== false) return 'CRYPTO: Ethereum';
+    if (stripos($ticker, 'DDOG') !== false) return 'US: Datadog';
+
+    return $ticker;
+}
+
+function getAvgBuyPrice(string $ticker, string $date, array $transactions): float {
+    $totalShares = 0;
+    $totalAmount = 0;
+    foreach($transactions as $transaction) {
+        if($transaction['stock'] === $ticker && $transaction['date'] <= $date && $transaction['type'] === 'buy') {
+            $totalShares += $transaction['quantity'];
+            $totalAmount += $transaction['price'] * $transaction['quantity'];
+        }
+    }
+    return $totalAmount / $totalShares;
 }
 
 $transactions = getTransactionsFromDB();
 $currentPortfolio = getCurrentPortfolio($transactions);
+$currencies = ['USD', 'PLN'];
 
-// echo "<pre>";
-// print_r($currentPortfolio);
-// print_r($transactions);
-// echo "</pre>";
 ?>
 
 <!doctype html>
@@ -156,6 +176,7 @@ $currentPortfolio = getCurrentPortfolio($transactions);
 <head>
     <meta charset="utf-8">
     <title>Stocks Dashboard</title>
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/950/950610.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.1/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-F3w7mX95PdgyTmZZMECAngseQB83DfGTowi0iMjiWaeVhAn4FJkqJByhZMI3AhiU" crossorigin="anonymous">
@@ -258,52 +279,106 @@ $currentPortfolio = getCurrentPortfolio($transactions);
         </tfoot>
     </table>
 
-    <h3 style="margin-top: 80px;">Closed Positions</h3>
+    <h3 style="margin-top: 80px;">Transactions</h3>
     <table class="table table-hover table-striped" style="text-align: right; font-family: monospace;">
         <thead>
         <tr>
-            <th scope="col">Date</th>
+            <th scope="col" style='text-align: left;'>Date</th>
+            <th scope="col" style='text-align: left;'>Type</th>
+            <th scope="col" style='text-align: left;'>Ticker</th>
             <th scope="col">Shares</th>
-            <th scope="col">Ticker</th>
-            <th scope="col">Avg. Price Paid</th>
-            <th scope="col">Avg. Current Price</th>
+            <th scope="col">Avg. Price</th>
+            <th scope="col">Amount</th>
             <th scope="col">Commision</th>
             <th scope="col">Value Change</th>
             <th scope="col">%</th>
         </tr>
         </thead>
         <tbody>
-        <tr>
-            <td>2021-09-27</td>
-            <td>4</td>
-            <td>Asana</td>
-            <td>300 USD</td>
-            <td>350 USD</td>
-            <td>10 USD</td>
-            <td style='color: green;'>40 USD</td>
-            <td style='color: green;'>13.33%</td>
-        </tr>
+        <?php
+
+        $totals = [];
+        foreach ($transactions as $i => $transaction) {
+            $transactions[$i]['avgBuyPrice'] = 0.0;
+            $transactions[$i]['change'] = 0.0;
+            $transactions[$i]['changePercentage'] = 0.0;
+
+            if($transaction['type'] === 'sell') {
+                $transactions[$i]['avgBuyPrice'] = getAvgBuyPrice($transaction['stock'], $transaction['date'], $transactions);
+                $transactions[$i]['change'] = ($transaction['price'] - $transactions[$i]['avgBuyPrice']) * $transaction['quantity'];
+                $transactions[$i]['changePercentage'] = ($transaction['price'] - $transactions[$i]['avgBuyPrice']) / $transactions[$i]['avgBuyPrice'];
+            }
+
+            $totals['commission'][$transaction['currency']] += $transaction['commision'];
+            $totals['change'][$transaction['currency']] += $transactions[$i]['change'];
+        }
+
+        foreach ($transactions as $transaction) {
+            echo "<tr>
+                <td style='text-align: left;'>{$transaction['date']}</td>
+                <td style='text-align: left;'>{$transaction['type']}</td>
+                <td style='text-align: left;'>".friendlyCompanyName($transaction['stock'])."</td>
+                <td>{$transaction['quantity']}</td>
+                <td>".formatCurrency($transaction['price'], $transaction['currency'])."</td>
+                <td>".formatCurrency($transaction['price'] * $transaction['quantity'], $transaction['currency'])."</td>
+                <td style='color: red;'>".formatCurrency($transaction['commision'], $transaction['currency'])."</td>
+                <td style='color: " . ($transaction['change'] < 0 ? 'red' : 'green') . ";'>".formatCurrency($transaction['change'], $transaction['currency'])."</td>
+                <td style='color: " . ($transaction['change'] < 0 ? 'red' : 'green') . ";'>".formatPercentage($transaction['changePercentage'])."</td>
+            </tr>";
+        }
+
+        ?>
         </tbody>
-    </table>
-
-    <div>
-        <h5>Total</h5>
-        <table style="text-align: right; font-family: monospace; width: auto !important;" class="table">
+        <tfoot>
             <tr>
-                <td>Total Value Change</td>
-                <td>40 USD</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td style="color: red;">
+                <?php
+                foreach($currencies as $currency) {
+                    echo formatCurrency($totals['commission'][$currency], $currency).'<br />';
+                }
+                ?>
+                </td>
+                <td style="color: green;">
+                <?php
+                foreach($currencies as $currency) {
+                    echo formatCurrency($totals['change'][$currency], $currency).'<br />';
+                }
+                ?>
+                </td>
+                <td></td>
             </tr>
-        </table>
-    </div>
-
-    <h3 style="margin-top: 40px;">Portfolio Realized</h3>
-    <ul>
-        <li style='color: green;'>2020: 3 400 PLN (+8.45%)</li>
-        <li style='color: green;'>2021: 3 400 PLN (+8.45%)</li>
-    </ul>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td style="color: red;">
+                    <?php
+                    echo formatCurrency($totals['commission']['PLN'] + USDtoPLN($totals['commission']['USD']), 'PLN').'<br />';
+                    ?>
+                </td>
+                <td style="color: green;">
+                    <?php
+                    echo formatCurrency($totals['change']['PLN'] + USDtoPLN($totals['change']['USD']), 'PLN').'<br />';
+                    echo formatCurrency($totals['change']['PLN'] + USDtoPLN($totals['change']['USD']) - ($totals['commission']['PLN'] + USDtoPLN($totals['commission']['USD'])), 'PLN').'<br />';
+                    ?>
+                </td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
 
 </div>
 
+<br/><br/><br/><br/>
 <br/><br/><br/><br/>
 
 </body>
