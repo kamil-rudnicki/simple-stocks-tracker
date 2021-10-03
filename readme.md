@@ -1,6 +1,9 @@
 # Simple Stocks Tracker
 
-# How to configure
+One file PHP stocks tracker. Because there should be single source of truth (transactions),
+and programming language is more powerful than spreadsheet in the end.
+
+## How to configure
 
 1. Create `config.php` with `$config['eodhistoricaldataApiToken'] = "...";`
 2. Create `Stocks.sqlite3` with `Stocks.sqlite3.sql`
